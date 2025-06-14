@@ -51,6 +51,8 @@ import org.omegat.gui.editor.autotext.AutotextAutoCompleterView;
 import org.omegat.gui.editor.chartable.CharTableAutoCompleterView;
 import org.omegat.gui.editor.history.HistoryCompleter;
 import org.omegat.gui.editor.history.HistoryPredictor;
+import org.omegat.gui.exttrans.MachineTranslationAutoCompleterView;
+import org.omegat.gui.matches.FuzzyMatchesAutoCompleterView;
 import org.omegat.gui.glossary.GlossaryAutoCompleterView;
 import org.omegat.util.Log;
 import org.omegat.util.OStrings;
@@ -109,6 +111,8 @@ public class AutoCompleter implements IAutoCompleter {
         addView(new CharTableAutoCompleterView());
         addView(new HistoryCompleter());
         addView(new HistoryPredictor());
+        addView(new org.omegat.gui.exttrans.MachineTranslationAutoCompleterView());
+        addView(new org.omegat.gui.matches.FuzzyMatchesAutoCompleterView());
 
         viewLabel = new JLabel();
         viewLabel.setBorder(new CompoundBorder(

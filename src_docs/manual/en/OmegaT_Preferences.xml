@@ -586,8 +586,14 @@
 	<para>Click on <guilabel>Autotext</guilabel> to configure the Autotext
 	options, and to add or remove entries.</para>
 
-	<para>Click on <guilabel>Character Table</guilabel> to set the Character
-	table auto-completer options.</para>
+        <para>Click on <guilabel>Character Table</guilabel> to set the Character
+        table auto-completer options.</para>
+
+        <para>Click on <guilabel>Machine Translations</guilabel> to insert
+        suggestions from enabled machine translation services.</para>
+
+        <para>Click on <guilabel>Fuzzy Matches</guilabel> to enable suggestions
+        from translation memory matches.</para>
 
 	<para>Click on <guilabel>Enable history completion</guilabel> or
 	<guilabel>Enable history prediction</guilabel> to set history based
