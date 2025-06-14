@@ -266,6 +266,15 @@ public class MatchesTextArea extends EntryInfoThreadPane<List<NearString>> imple
     }
 
     /**
+     * Get the list of currently displayed fuzzy matches.
+     *
+     * @return list of matches
+     */
+    public List<NearString> getDisplayedMatches() {
+        return new ArrayList<>(matches);
+    }
+
+    /**
      * Attempts to substitute numbers in a match with numbers from the source
      * segment. For substitution to be done, the number of numbers must be the
      * same between source and matches, and the numbers must be the same between
