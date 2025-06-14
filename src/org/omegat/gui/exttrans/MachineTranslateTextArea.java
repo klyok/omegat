@@ -32,6 +32,7 @@ package org.omegat.gui.exttrans;
 
 import java.awt.Dimension;
 import java.awt.Font;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -153,6 +154,15 @@ public class MachineTranslateTextArea extends EntryInfoThreadPane<MachineTransla
         MachineTranslationInfo info = displayed.get(selectedIndex);
         highlightSelected(selectedIndex, info);
         return info;
+    }
+
+    /**
+     * Get all displayed machine translation results.
+     *
+     * @return list of translation infos
+     */
+    public List<MachineTranslationInfo> getDisplayedTranslations() {
+        return new ArrayList<>(displayed);
     }
 
     private void highlightSelected(final int selectedIndex, final MachineTranslationInfo info) {

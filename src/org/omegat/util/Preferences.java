@@ -455,6 +455,14 @@ public final class Preferences {
     public static final String AC_HISTORY_COMPLETION_ENABLED = "allow_history_completer";
     public static final String AC_HISTORY_PREDICTION_ENABLED = "history_completer_prediction_enabled";
 
+    /** machine translation auto-completion */
+    public static final String AC_MACHINETRANSLATION_ENABLED = "ac_machine_translation_enabled";
+    public static final boolean AC_MACHINETRANSLATION_ENABLED_DEFAULT = true;
+
+    /** fuzzy match auto-completion */
+    public static final String AC_FUZZY_MATCH_ENABLED = "ac_fuzzy_match_enabled";
+    public static final boolean AC_FUZZY_MATCH_ENABLED_DEFAULT = true;
+
     /** status bar progress mode */
     public static final String SB_PROGRESS_MODE = "sb_progress_mode";
 
