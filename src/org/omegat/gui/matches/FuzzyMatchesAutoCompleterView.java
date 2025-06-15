@@ -3,6 +3,8 @@ package org.omegat.gui.matches;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 
 import org.omegat.core.Core;
 import org.omegat.core.matching.NearString;
@@ -10,6 +12,7 @@ import org.omegat.gui.editor.autocompleter.AutoCompleterItem;
 import org.omegat.gui.editor.autocompleter.AutoCompleterListView;
 import org.omegat.util.OStrings;
 import org.omegat.util.Preferences;
+import org.omegat.tokenizer.ITokenizer;
 
 /**
  * Auto-completion view offering suggestions from fuzzy match results.
@@ -29,14 +32,23 @@ public class FuzzyMatchesAutoCompleterView extends AutoCompleterListView {
         }
         String token = getLastToken(prevText);
         List<AutoCompleterItem> result = new ArrayList<>();
+        Set<String> added = new HashSet<>();
         for (NearString ns : matches) {
             String trans = ns.translation;
-            if (contextualOnly) {
-                if (!token.isEmpty() && trans.startsWith(token) && !trans.equals(token)) {
-                    result.add(new AutoCompleterItem(trans, null, token.length()));
+            String[] words = getTokenizer().tokenizeWordsToStrings(trans, ITokenizer.StemmingMode.NONE);
+            for (String word : words) {
+                if (added.contains(word)) {
+                    continue;
                 }
-            } else {
-                result.add(new AutoCompleterItem(trans, null, 0));
+                if (contextualOnly) {
+                    if (!token.isEmpty() && word.startsWith(token) && !word.equals(token)) {
+                        result.add(new AutoCompleterItem(word, null, token.length()));
+                        added.add(word);
+                    }
+                } else {
+                    result.add(new AutoCompleterItem(word, null, 0));
+                    added.add(word);
+                }
             }
         }
         return result;
