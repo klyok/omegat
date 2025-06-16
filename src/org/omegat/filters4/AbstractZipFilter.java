@@ -208,9 +208,6 @@ public abstract class AbstractZipFilter extends AbstractFilter {
     }
 
     private void copyUnchangedEntry(ZipFile zipFile, ZipOutputStream zipOutputStream, ZipEntry zipEntry) throws IOException {
-        if (zipOutputStream == null) {
-            return;
-        }
         ZipEntry outputEntry = new ZipEntry(zipEntry.getName());
         zipOutputStream.putNextEntry(outputEntry);
         org.apache.commons.io.IOUtils.copy(zipFile.getInputStream(zipEntry), zipOutputStream);
