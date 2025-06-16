@@ -242,19 +242,14 @@ public abstract class AbstractZipFilter extends AbstractFilter {
         }
     }
 
-    private void translateEntry(ZipFile zf, ZipOutputStream zipout, BufferedWriter writer,
-                                FilterContext fc, ZipEntry ze) {
+    private void translateEntry(ZipFile zf, ZipOutputStream zipout, BufferedWriter writer, FilterContext fc, ZipEntry ze) {
         try (XMLReader xReader = new XMLReader(zf.getInputStream(ze))) {
             AbstractXmlFilter xmlfilter = getFilter(ze);
             try (BufferedReader reader = new BufferedReader(xReader)) {
-                if (zipout != null) {
-                    ZipEntry outEntry = new ZipEntry(ze.getName());
-                    zipout.putNextEntry(outEntry);
-                }
+                ZipEntry outEntry = new ZipEntry(ze.getName());
+                zipout.putNextEntry(outEntry);
                 xmlfilter.processFile(reader, writer, fc);
-                if (zipout != null) {
-                    zipout.closeEntry();
-                }
+                zipout.closeEntry();
             }
         } catch (Exception e) {
             Log.log(e);
