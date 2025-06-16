@@ -197,9 +197,12 @@ public abstract class AbstractZipFilter extends AbstractFilter {
     private void processTranslatableEntry(ZipFile zipFile, ZipOutputStream zipOutputStream, BufferedWriter writer,
                                           FilterContext filterContext, List<ZipEntry> translatableEntries,
                                           Comparator<ZipEntry> entryComparator, ZipEntry zipEntry) {
-        if (entryComparator == null || zipOutputStream != null) {
+        if (zipOutputStream != null && entryComparator == null) {
+            // No need to reorder entries; translate immediately while writing output
             translateEntry(zipFile, zipOutputStream, writer, filterContext, zipEntry);
         } else {
+            // Either we are only parsing the archive (zipOutputStream is null)
+            // or we want to sort entries before writing them. Store for later.
             translatableEntries.add(zipEntry);
         }
     }
