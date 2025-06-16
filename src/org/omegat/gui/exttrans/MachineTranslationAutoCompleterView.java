@@ -29,27 +29,29 @@ public class MachineTranslationAutoCompleterView extends AutoCompleterListView {
             return Collections.emptyList();
         }
         String token = getLastToken(prevText);
-        List<AutoCompleterItem> result = new ArrayList<>();
-        Set<String> added = new HashSet<>();
+        List<AutoCompleterItem> contextual = new ArrayList<>();
+        List<AutoCompleterItem> all = new ArrayList<>();
+        Set<String> seenContext = new HashSet<>();
+        Set<String> seenAll = new HashSet<>();
         for (MachineTranslationInfo info : infos) {
             String tr = info.result;
             String[] words = getTokenizer().tokenizeWordsToStrings(tr, ITokenizer.StemmingMode.NONE);
             for (String word : words) {
-                if (added.contains(word)) {
-                    continue;
+                if (seenAll.add(word)) {
+                    all.add(new AutoCompleterItem(word, new String[] { info.translatorName }, 0));
                 }
-                if (contextualOnly) {
-                    if (!token.isEmpty() && word.startsWith(token) && !word.equals(token)) {
-                        result.add(new AutoCompleterItem(word, new String[] { info.translatorName }, token.length()));
-                        added.add(word);
+                if (!token.isEmpty() && word.startsWith(token) && !word.equals(token)) {
+                    if (seenContext.add(word)) {
+                        contextual.add(new AutoCompleterItem(word, new String[] { info.translatorName }, token.length()));
                     }
-                } else {
-                    result.add(new AutoCompleterItem(word, new String[] { info.translatorName }, 0));
-                    added.add(word);
                 }
             }
         }
-        return result;
+
+        if (!contextual.isEmpty() || contextualOnly) {
+            return contextual;
+        }
+        return all;
     }
 
     @Override
