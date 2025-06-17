@@ -106,6 +106,8 @@ checkNumErr = true
 nameNumErr = res.getString("nameNumErr")
 checkSpellErr = false
 nameSpellErr = res.getString("nameSpellErr")
+checkSameTargetDiffSource = true
+nameSameTargetDiffSource = res.getString("nameSameTargetDiffSource")
 
 
 /*
@@ -190,6 +192,7 @@ if (!prop) {
 
 def QAcheck() {
     rules = ruleset.clone()
+    def tgtIndex = [:].withDefault { [] }
 // Prefs
     maxCharLengthAbove=240
     minCharLengthAbove=40
@@ -282,12 +285,28 @@ def QAcheck() {
             if ( target == null || target.length() == 0) {
                 target = QA_empty
             }
+            if (target != QA_empty) {
+                tgtIndex[target] << [seg: ste.entryNum(), source: source, target: target]
+            }
 
             rules.each { k, v ->
                 if (rules[k](source, target)) {
                     console.println(ste.entryNum() + "\t" + k + /*"\t[" + source + "]" + */"\t[" + target + "]");
                     model.data.add([ seg: ste.entryNum(), rule: k, source: source, target: target ]);
                     segment_count++;
+                }
+            }
+        }
+    }
+
+    if (checkSameTargetDiffSource) {
+        tgtIndex.each { key, list ->
+            def srcs = list.collect { it.source }.toSet()
+            if (srcs.size() > 1) {
+                list.each { occ ->
+                    console.println(occ.seg + "\t" + nameSameTargetDiffSource + "\t[" + occ.target + "]")
+                    model.data.add([ seg: occ.seg, rule: nameSameTargetDiffSource, source: occ.source, target: occ.target ])
+                    segment_count++
                 }
             }
         }
@@ -371,6 +390,12 @@ def interfejs(locationxy = new Point(0, 0), width = 900, height = 550, scrollpos
                     checkLanguageTools = !checkLanguageTools;
                 },
                 constraints:gbc(gridx:0, gridy:2, weightx: 0.5, fill:GridBagConstraints.HORIZONTAL, insets:[0,5,0,0]))
+            checkBox(text:res.getString("checkSameTargetDiffSource"),
+                selected: checkSameTargetDiffSource,
+                actionPerformed: {
+                    checkSameTargetDiffSource = !checkSameTargetDiffSource;
+                },
+                constraints:gbc(gridx:0, gridy:3, weightx: 0.5, fill:GridBagConstraints.HORIZONTAL, insets:[0,5,0,0]))
 
 
             checkBox(text:res.getString("checkLeadSpace"),
