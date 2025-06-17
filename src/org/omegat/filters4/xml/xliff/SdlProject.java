@@ -26,6 +26,7 @@
 package org.omegat.filters4.xml.xliff;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
 import java.util.zip.ZipEntry;
 
 import org.omegat.core.Core;
@@ -81,5 +82,10 @@ public class SdlProject extends AbstractZipFilter {
         SdlXliff xmlfilter = new SdlXliff();
         xmlfilter.setCallbacks(entryParseCallback, entryTranslateCallback);
         return xmlfilter;
+    }
+
+    @Override
+    protected Comparator<ZipEntry> getEntryComparator() {
+        return Comparator.comparing(ZipEntry::getName);
     }
 }
