@@ -362,6 +362,9 @@ public final class Preferences {
     public static final String EXT_TMX_FUZZY_MATCH_THRESHOLD = "ext_tmx_fuzzy_match_threshold";
     /** paragraph match from segment TMX */
     public static final String PARAGRAPH_MATCH_FROM_SEGMENT_TMX = "paragraph_match_from_segment_tmx";
+    /** Use parallel TM search */
+    public static final String TM_SEARCH_PARALLEL = "tm_search_parallel";
+    public static final boolean TM_SEARCH_PARALLEL_DEFAULT = false;
 
     /** View options: Show all sources in bold */
     public static final String VIEW_OPTION_SOURCE_ALL_BOLD = "view_option_source_all_bold";

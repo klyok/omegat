@@ -37,6 +37,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.Comparator;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -99,7 +102,8 @@ public class FindMatches {
 
     private static final String ORPHANED_FILE_NAME = OStrings.getString("CT_ORPHAN_STRINGS");
 
-    private final ISimilarityCalculator distance = new LevenshteinDistance();
+    private final ThreadLocal<ISimilarityCalculator> distance =
+            ThreadLocal.withInitial(LevenshteinDistance::new);
 
     /**
      * the removePattern that was configured by the user.
@@ -132,6 +136,35 @@ public class FindMatches {
     private final int fuzzyMatchThreshold;
 
     private final Segmenter segmenter;
+
+    private static class Candidate {
+        final EntryKey key;
+        final ITMXEntry entry;
+        final String tmx;
+        final NearString.MATCH_SOURCE source;
+        final boolean fuzzy;
+        final int penalty;
+
+        Candidate(EntryKey key, ITMXEntry entry, String tmx, NearString.MATCH_SOURCE source,
+                boolean fuzzy, int penalty) {
+            this.key = key;
+            this.entry = entry;
+            this.tmx = tmx;
+            this.source = source;
+            this.fuzzy = fuzzy;
+            this.penalty = penalty;
+        }
+    }
+
+    private static class ProcessedCandidate {
+        final Candidate cand;
+        final NearString near;
+
+        ProcessedCandidate(Candidate cand, NearString near) {
+            this.cand = cand;
+            this.near = near;
+        }
+    }
 
     /**
      * Constructs a FindMatches instance for finding fuzzy matched translation memories.
@@ -273,12 +306,12 @@ public class FindMatches {
         strTokensNoStem = tokenizeNoStem(srcText);
         strTokensAll = tokenizeAll(srcText);
 
-        // travel by project entries, including orphaned
+        List<Candidate> candidates = new ArrayList<>();
+
         if (project.getProjectProperties().isSupportDefaultTranslations()) {
             project.iterateByDefaultTranslations((source, trans) -> {
                 checkStopped(stop);
                 if (!searchExactlyTheSame && source.equals(searchText)) {
-                    // skip original==original entry comparison
                     return;
                 }
                 if (trans.translation == null) {
@@ -287,13 +320,13 @@ public class FindMatches {
                 String fileName = project.isOrphaned(source) ? ORPHANED_FILE_NAME : null;
                 PrepareTMXEntry entry = new PrepareTMXEntry(trans);
                 entry.source = source;
-                processEntry(null, entry, fileName, NearString.MATCH_SOURCE.MEMORY, false, 0);
+                candidates.add(new Candidate(null, entry, fileName, NearString.MATCH_SOURCE.MEMORY, false, 0));
             });
         }
+
         project.iterateByMultipleTranslations((source, trans) -> {
             checkStopped(stop);
             if (!searchExactlyTheSame && source.sourceText.equals(searchText)) {
-                // skip original==original entry comparison
                 return;
             }
             if (trans.translation == null) {
@@ -302,12 +335,9 @@ public class FindMatches {
             String fileName = project.isOrphaned(source) ? ORPHANED_FILE_NAME : null;
             PrepareTMXEntry entry = new PrepareTMXEntry(trans);
             entry.source = source.sourceText;
-            processEntry(source, entry, fileName, NearString.MATCH_SOURCE.MEMORY, false, 0);
+            candidates.add(new Candidate(source, entry, fileName, NearString.MATCH_SOURCE.MEMORY, false, 0));
         });
-        /*
-         * Penalty applied for fuzzy matches in another language (if no match in
-         * the target language was found).
-         */
+
         int foreignPenalty = Preferences.getPreferenceDefault(Preferences.PENALTY_FOR_FOREIGN_MATCHES,
                 Preferences.PENALTY_FOR_FOREIGN_MATCHES_DEFAULT);
         for (Map.Entry<String, ExternalTMX> en : project.getTransMemories().entrySet()) {
@@ -318,32 +348,41 @@ public class FindMatches {
             }
             for (ITMXEntry tmen : en.getValue().getEntries()) {
                 checkStopped(stop);
-                if (tmen.getSourceText() == null) {
-                    // Not all TMX entries have a source; skip it in
-                    // the case, because of no meaningful.
-                    continue;
-                }
-                if (tmen.getTranslationText() == null) {
+                if (tmen.getSourceText() == null || tmen.getTranslationText() == null) {
                     continue;
                 }
                 int tmenPenalty = penalty;
                 if (tmen.hasPropValue(ExternalTMFactory.TMXLoader.PROP_FOREIGN_MATCH, "true")) {
                     tmenPenalty += foreignPenalty;
                 }
-                processEntry(null, tmen, en.getKey(), NearString.MATCH_SOURCE.TM, false, tmenPenalty);
+                candidates.add(new Candidate(null, tmen, en.getKey(), NearString.MATCH_SOURCE.TM, false, tmenPenalty));
             }
         }
 
-        // travel by all entries for check source file translations
         for (SourceTextEntry ste : project.getAllEntries()) {
             checkStopped(stop);
             if (ste.getSourceTranslation() != null) {
                 PrepareTMXEntry entry = new PrepareTMXEntry();
                 entry.source = ste.getSrcText();
                 entry.translation = ste.getSourceTranslation();
-                processEntry(ste.getKey(), entry, ste.getKey().file, NearString.MATCH_SOURCE.FILES,
-                        ste.isSourceTranslationFuzzy(), 0);
+                candidates.add(new Candidate(ste.getKey(), entry, ste.getKey().file, NearString.MATCH_SOURCE.FILES,
+                        ste.isSourceTranslationFuzzy(), 0));
             }
+        }
+
+        boolean parallel = Preferences.isPreferenceDefault(Preferences.TM_SEARCH_PARALLEL, false)
+                && Runtime.getRuntime().availableProcessors() > 1;
+        Stream<Candidate> stream = parallel ? candidates.parallelStream() : candidates.stream();
+
+        List<ProcessedCandidate> processed = stream.map(c -> buildCandidate(c, stop))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        processed.sort(Comparator.comparing((ProcessedCandidate pc) -> pc.near.scores[0],
+                new NearString.ScoresComparator(NearString.SORT_KEY.SCORE)).reversed());
+
+        for (ProcessedCandidate pc : processed) {
+            addNearString(result, pc.cand.key, pc.cand.entry, pc.near);
         }
         if (runSeparateSegmentMatch) {
             FindMatches separateSegmentMatcher = new FindMatches(project, segmenter, 1, true,
@@ -438,7 +477,7 @@ public class FindMatches {
         Token[] candTokens = tokenizeStem(realSource);
 
         // First percent value - with stemming if possible
-        int similarityStem = FuzzyMatcher.calcSimilarity(distance, strTokensStem, candTokens);
+        int similarityStem = FuzzyMatcher.calcSimilarity(distance.get(), strTokensStem, candTokens);
 
         similarityStem -= penalty;
         if (fuzzy) {
@@ -454,7 +493,7 @@ public class FindMatches {
 
         Token[] candTokensNoStem = tokenizeNoStem(realSource);
         // Second percent value - without stemming
-        int similarityNoStem = FuzzyMatcher.calcSimilarity(distance, strTokensNoStem, candTokensNoStem);
+        int similarityNoStem = FuzzyMatcher.calcSimilarity(distance.get(), strTokensNoStem, candTokensNoStem);
         similarityNoStem -= penalty;
         if (fuzzy) {
             // penalty for fuzzy
@@ -469,7 +508,7 @@ public class FindMatches {
 
         Token[] candTokensAll = tokenizeAll(realSource);
         // Third percent value - with numbers, tags, etc.
-        int simAdjusted = FuzzyMatcher.calcSimilarity(distance, strTokensAll, candTokensAll);
+        int simAdjusted = FuzzyMatcher.calcSimilarity(distance.get(), strTokensAll, candTokensAll);
         simAdjusted -= penalty;
         if (fuzzy) {
             // penalty for fuzzy
@@ -563,18 +602,105 @@ public class FindMatches {
         }
     }
 
+    private void addNearString(List<NearString> list, EntryKey key, ITMXEntry entry, NearString near) {
+        final String source = near.source;
+        final String translation = near.translation;
+        NearString.Scores scores = near.scores[0];
+        int pos = 0;
+        for (int i = 0; i < list.size(); i++) {
+            NearString st = list.get(i);
+            if (source.equals(st.source) && Objects.equals(translation, st.translation)) {
+                list.set(i, NearString.merge(st, key, entry, near.comesFrom, near.fuzzyMark, scores, null,
+                        near.projs[0]));
+                return;
+            }
+            if (st.scores[0].score < scores.score) {
+                break;
+            }
+            if (st.scores[0].score == scores.score) {
+                if (st.scores[0].scoreNoStem < scores.scoreNoStem) {
+                    break;
+                }
+                if (st.scores[0].scoreNoStem == scores.scoreNoStem) {
+                    if (st.scores[0].adjustedScore < scores.adjustedScore) {
+                        break;
+                    }
+                    if (scores.score == 100 && !st.source.equals(srcText) && source.equals(srcText)) {
+                        break;
+                    }
+                }
+            }
+            pos = i + 1;
+        }
+        list.add(pos, near);
+        if (list.size() > maxCount) {
+            list.remove(list.size() - 1);
+        }
+    }
+
+    private ProcessedCandidate buildCandidate(Candidate cand, IStopped stop) {
+        checkStopped(stop);
+        String realSource = cand.entry.getSourceText();
+        int realPenaltyForRemoved = 0;
+        if (removePattern != null) {
+            StringBuilder entryRemovedText = new StringBuilder();
+            Matcher removeMatcher = removePattern.matcher(realSource);
+            while (removeMatcher.find()) {
+                entryRemovedText.append(removeMatcher.group());
+            }
+            realSource = removeMatcher.replaceAll("");
+            if (!entryRemovedText.toString().equals(removedText)) {
+                realPenaltyForRemoved = PENALTY_FOR_REMOVED;
+            }
+        }
+
+        Token[] candTokens = tokenizeStem(realSource);
+        int similarityStem = FuzzyMatcher.calcSimilarity(distance.get(), strTokensStem, candTokens);
+        similarityStem -= cand.penalty;
+        if (cand.fuzzy) {
+            similarityStem -= PENALTY_FOR_FUZZY;
+        }
+        similarityStem -= realPenaltyForRemoved;
+
+        Token[] candTokensNoStem = tokenizeNoStem(realSource);
+        int similarityNoStem = FuzzyMatcher.calcSimilarity(distance.get(), strTokensNoStem, candTokensNoStem);
+        similarityNoStem -= cand.penalty;
+        if (cand.fuzzy) {
+            similarityNoStem -= PENALTY_FOR_FUZZY;
+        }
+        similarityNoStem -= realPenaltyForRemoved;
+
+        Token[] candTokensAll = tokenizeAll(realSource);
+        int simAdjusted = FuzzyMatcher.calcSimilarity(distance.get(), strTokensAll, candTokensAll);
+        simAdjusted -= cand.penalty;
+        if (cand.fuzzy) {
+            simAdjusted -= PENALTY_FOR_FUZZY;
+        }
+        simAdjusted -= realPenaltyForRemoved;
+
+        if (fuzzyMatchThreshold > 0 && similarityStem < fuzzyMatchThreshold
+                && similarityNoStem < fuzzyMatchThreshold && simAdjusted < fuzzyMatchThreshold) {
+            return null;
+        }
+
+        NearString near = new NearString(cand.key, cand.entry, cand.source, cand.fuzzy,
+                new NearString.Scores(similarityStem, similarityNoStem, simAdjusted, cand.penalty), null, cand.tmx);
+        return new ProcessedCandidate(cand, near);
+    }
+
     /*
      * Methods for tokenize strings with caching.
      */
-    Map<String, Token[]> tokenizeStemCache = new HashMap<>();
-    Map<String, Token[]> tokenizeNoStemCache = new HashMap<>();
-    Map<String, Token[]> tokenizeAllCache = new HashMap<>();
+    ThreadLocal<Map<String, Token[]>> tokenizeStemCache = ThreadLocal.withInitial(HashMap::new);
+    ThreadLocal<Map<String, Token[]>> tokenizeNoStemCache = ThreadLocal.withInitial(HashMap::new);
+    ThreadLocal<Map<String, Token[]>> tokenizeAllCache = ThreadLocal.withInitial(HashMap::new);
 
     Token[] tokenizeStem(String str) {
-        Token[] tokens = tokenizeStemCache.get(str);
+        Map<String, Token[]> cache = tokenizeStemCache.get();
+        Token[] tokens = cache.get(str);
         if (tokens == null) {
             tokens = tok.tokenizeWords(str, ITokenizer.StemmingMode.MATCHING);
-            tokenizeStemCache.put(str, tokens);
+            cache.put(str, tokens);
         }
         return tokens;
     }
@@ -583,10 +709,11 @@ public class FindMatches {
         // No-stemming token comparisons are intentionally case-insensitive
         // for matching purposes.
         str = str.toLowerCase(srcLocale);
-        Token[] tokens = tokenizeNoStemCache.get(str);
+        Map<String, Token[]> cache = tokenizeNoStemCache.get();
+        Token[] tokens = cache.get(str);
         if (tokens == null) {
             tokens = tok.tokenizeWords(str, ITokenizer.StemmingMode.NONE);
-            tokenizeNoStemCache.put(str, tokens);
+            cache.put(str, tokens);
         }
         return tokens;
     }
@@ -595,10 +722,11 @@ public class FindMatches {
         // Verbatim token comparisons are intentionally case-insensitive.
         // for matching purposes.
         str = str.toLowerCase(srcLocale);
-        Token[] tokens = tokenizeAllCache.get(str);
+        Map<String, Token[]> cache = tokenizeAllCache.get();
+        Token[] tokens = cache.get(str);
         if (tokens == null) {
             tokens = tok.tokenizeVerbatim(str);
-            tokenizeAllCache.put(str, tokens);
+            cache.put(str, tokens);
         }
         return tokens;
     }
