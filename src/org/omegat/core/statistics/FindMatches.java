@@ -37,8 +37,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.Comparator;
-import java.util.stream.Collectors;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Stream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -156,15 +156,6 @@ public class FindMatches {
         }
     }
 
-    private static class ProcessedCandidate {
-        final Candidate cand;
-        final NearString near;
-
-        ProcessedCandidate(Candidate cand, NearString near) {
-            this.cand = cand;
-            this.near = near;
-        }
-    }
 
     /**
      * Constructs a FindMatches instance for finding fuzzy matched translation memories.
@@ -306,6 +297,16 @@ public class FindMatches {
         strTokensNoStem = tokenizeNoStem(srcText);
         strTokensAll = tokenizeAll(srcText);
 
+        boolean parallel = Preferences.isPreferenceDefault(Preferences.TM_SEARCH_PARALLEL, false)
+                && Runtime.getRuntime().availableProcessors() > 1;
+
+        Queue<List<NearString>> partialResults = new ConcurrentLinkedQueue<>();
+        ThreadLocal<List<NearString>> localResults = ThreadLocal.withInitial(() -> {
+            List<NearString> list = new ArrayList<>(maxCount + 1);
+            partialResults.add(list);
+            return list;
+        });
+
         List<Candidate> candidates = new ArrayList<>();
 
         if (project.getProjectProperties().isSupportDefaultTranslations()) {
@@ -322,6 +323,8 @@ public class FindMatches {
                 entry.source = source;
                 candidates.add(new Candidate(null, entry, fileName, NearString.MATCH_SOURCE.MEMORY, false, 0));
             });
+            processCandidates(candidates, parallel, stop, localResults);
+            candidates.clear();
         }
 
         project.iterateByMultipleTranslations((source, trans) -> {
@@ -337,6 +340,8 @@ public class FindMatches {
             entry.source = source.sourceText;
             candidates.add(new Candidate(source, entry, fileName, NearString.MATCH_SOURCE.MEMORY, false, 0));
         });
+        processCandidates(candidates, parallel, stop, localResults);
+        candidates.clear();
 
         int foreignPenalty = Preferences.getPreferenceDefault(Preferences.PENALTY_FOR_FOREIGN_MATCHES,
                 Preferences.PENALTY_FOR_FOREIGN_MATCHES_DEFAULT);
@@ -357,6 +362,8 @@ public class FindMatches {
                 }
                 candidates.add(new Candidate(null, tmen, en.getKey(), NearString.MATCH_SOURCE.TM, false, tmenPenalty));
             }
+            processCandidates(candidates, parallel, stop, localResults);
+            candidates.clear();
         }
 
         for (SourceTextEntry ste : project.getAllEntries()) {
@@ -369,21 +376,16 @@ public class FindMatches {
                         ste.isSourceTranslationFuzzy(), 0));
             }
         }
+        processCandidates(candidates, parallel, stop, localResults);
+        candidates.clear();
 
-        boolean parallel = Preferences.isPreferenceDefault(Preferences.TM_SEARCH_PARALLEL, false)
-                && Runtime.getRuntime().availableProcessors() > 1;
-        Stream<Candidate> stream = parallel ? candidates.parallelStream() : candidates.stream();
-
-        List<ProcessedCandidate> processed = stream.map(c -> buildCandidate(c, stop))
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-
-        processed.sort(Comparator.comparing((ProcessedCandidate pc) -> pc.near.scores[0],
-                new NearString.ScoresComparator(NearString.SORT_KEY.SCORE)).reversed());
-
-        for (ProcessedCandidate pc : processed) {
-            addNearString(result, pc.cand.key, pc.cand.entry, pc.near);
+        List<NearString> merged = new ArrayList<>(maxCount + 1);
+        for (List<NearString> list : partialResults) {
+            for (NearString ns : list) {
+                addNearString(merged, ns);
+            }
         }
+        result.addAll(merged);
         if (runSeparateSegmentMatch) {
             FindMatches separateSegmentMatcher = new FindMatches(project, segmenter, 1, true,
                     fuzzyMatchThreshold);
@@ -602,7 +604,7 @@ public class FindMatches {
         }
     }
 
-    private void addNearString(List<NearString> list, EntryKey key, ITMXEntry entry, NearString near) {
+    private void addNearString(List<NearString> list, NearString near) {
         final String source = near.source;
         final String translation = near.translation;
         NearString.Scores scores = near.scores[0];
@@ -610,8 +612,10 @@ public class FindMatches {
         for (int i = 0; i < list.size(); i++) {
             NearString st = list.get(i);
             if (source.equals(st.source) && Objects.equals(translation, st.translation)) {
-                list.set(i, NearString.merge(st, key, entry, near.comesFrom, near.fuzzyMark, scores, null,
-                        near.projs[0]));
+                list.set(i, NearString.merge(st, near.key, near.source, near.translation, near.comesFrom,
+                        near.fuzzyMark, scores.score, scores.scoreNoStem, scores.adjustedScore, near.attr,
+                        near.projs[0], near.creator, near.creationDate, near.changer, near.changedDate,
+                        near.props));
                 return;
             }
             if (st.scores[0].score < scores.score) {
@@ -638,7 +642,18 @@ public class FindMatches {
         }
     }
 
-    private ProcessedCandidate buildCandidate(Candidate cand, IStopped stop) {
+    private void processCandidates(List<Candidate> candidates, boolean parallel, IStopped stop,
+            ThreadLocal<List<NearString>> localResults) {
+        Stream<Candidate> stream = parallel ? candidates.parallelStream() : candidates.stream();
+        stream.forEach(c -> {
+            NearString near = buildCandidate(c, stop);
+            if (near != null) {
+                addNearString(localResults.get(), near);
+            }
+        });
+    }
+
+    private NearString buildCandidate(Candidate cand, IStopped stop) {
         checkStopped(stop);
         String realSource = cand.entry.getSourceText();
         int realPenaltyForRemoved = 0;
@@ -685,7 +700,7 @@ public class FindMatches {
 
         NearString near = new NearString(cand.key, cand.entry, cand.source, cand.fuzzy,
                 new NearString.Scores(similarityStem, similarityNoStem, simAdjusted, cand.penalty), null, cand.tmx);
-        return new ProcessedCandidate(cand, near);
+        return near;
     }
 
     /*
