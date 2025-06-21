@@ -5,13 +5,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.Locale;
 
 import org.omegat.core.Core;
 import org.omegat.core.matching.NearString;
 import org.omegat.gui.editor.autocompleter.AutoCompleterItem;
 import org.omegat.gui.editor.autocompleter.AutoCompleterListView;
+import org.omegat.gui.editor.autocompleter.AutoCompleter;
 import org.omegat.util.OStrings;
 import org.omegat.util.Preferences;
+import org.omegat.util.StringUtil;
 import org.omegat.tokenizer.ITokenizer;
 
 /**
@@ -35,16 +38,18 @@ public class FuzzyMatchesAutoCompleterView extends AutoCompleterListView {
         List<AutoCompleterItem> all = new ArrayList<>();
         Set<String> seenContext = new HashSet<>();
         Set<String> seenAll = new HashSet<>();
+        Locale locale = getTargetLocale();
         for (NearString ns : matches) {
             String trans = ns.translation;
             String[] words = getTokenizer().tokenizeWordsToStrings(trans, ITokenizer.StemmingMode.NONE);
             for (String word : words) {
-                if (seenAll.add(word)) {
+                if (seenAll.add(word.toLowerCase(locale))) {
                     all.add(new AutoCompleterItem(word, null, 0));
                 }
                 if (!token.isEmpty() && word.startsWith(token) && !word.equals(token)) {
-                    if (seenContext.add(word)) {
-                        contextual.add(new AutoCompleterItem(word, null, token.length()));
+                    if (seenContext.add(word.toLowerCase(locale))) {
+                        String payload = StringUtil.matchCapitalization(word, token, locale);
+                        contextual.add(new AutoCompleterItem(payload, null, token.length()));
                     }
                 }
             }
@@ -64,5 +69,18 @@ public class FuzzyMatchesAutoCompleterView extends AutoCompleterListView {
     @Override
     protected boolean isEnabled() {
         return Preferences.isPreferenceDefault(Preferences.AC_FUZZY_MATCH_ENABLED, true);
+    }
+
+    @Override
+    public boolean shouldPopUp() {
+        String leadingText = getLeadingText();
+        List<AutoCompleterItem> entries = computeListData(leadingText, true);
+        return !entries.isEmpty()
+                && (leadingText.codePointCount(0, leadingText.length()) > 1
+                        || entries.size() <= AutoCompleter.PAGE_ROW_COUNT);
+    }
+
+    private Locale getTargetLocale() {
+        return getTargetLanguage().getLocale();
     }
 }
