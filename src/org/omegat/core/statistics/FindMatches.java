@@ -612,16 +612,10 @@ public class FindMatches {
         for (int i = 0; i < list.size(); i++) {
             NearString st = list.get(i);
             if (source.equals(st.source) && Objects.equals(translation, st.translation)) {
-                PrepareTMXEntry entry = new PrepareTMXEntry();
-                entry.source = near.source;
-                entry.translation = near.translation;
-                entry.creator = near.creator;
-                entry.creationDate = near.creationDate;
-                entry.changer = near.changer;
-                entry.changeDate = near.changedDate;
-                entry.otherProperties = near.props;
-                list.set(i, NearString.merge(st, near.key, entry, near.comesFrom, near.fuzzyMark, scores,
-                        near.attr, near.projs[0]));
+                list.set(i, NearString.merge(st, near.key, near.source, near.translation, near.comesFrom,
+                        near.fuzzyMark, scores.score, scores.scoreNoStem, scores.adjustedScore, near.attr,
+                        near.projs[0], near.creator, near.creationDate, near.changer, near.changedDate,
+                        near.props));
                 return;
             }
             if (st.scores[0].score < scores.score) {
