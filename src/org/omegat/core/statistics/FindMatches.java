@@ -563,6 +563,48 @@ public class FindMatches {
         }
     }
 
+    /**
+     * Insert {@link NearString} into the provided list maintaining the same
+     * ordering rules as {@link #addNearString(EntryKey, ITMXEntry, NearString.MATCH_SOURCE, boolean, NearString.Scores, String)}.
+     * When a matching entry already exists, it is consolidated using
+     * {@link NearString#merge(NearString, EntryKey, ITMXEntry, NearString.MATCH_SOURCE, boolean, NearString.Scores, byte[], String)}.
+     */
+    private static void addNearString(List<NearString> list, NearString near) {
+        int pos = 0;
+        for (int i = 0; i < list.size(); i++) {
+            NearString st = list.get(i);
+            if (near.source.equals(st.source) && Objects.equals(near.translation, st.translation)) {
+                PrepareTMXEntry ent = new PrepareTMXEntry();
+                ent.source = near.source;
+                ent.translation = near.translation;
+                ent.creator = near.creator;
+                ent.creationDate = near.creationDate;
+                ent.changer = near.changer;
+                ent.changeDate = near.changedDate;
+                ent.otherProperties = near.props;
+
+                list.set(i, NearString.merge(st, near.key, ent, near.comesFrom,
+                        near.fuzzyMark, near.scores[0], near.attr, near.projs[0]));
+                return;
+            }
+            if (st.scores[0].score < near.scores[0].score) {
+                break;
+            }
+            if (st.scores[0].score == near.scores[0].score) {
+                if (st.scores[0].scoreNoStem < near.scores[0].scoreNoStem) {
+                    break;
+                }
+                if (st.scores[0].scoreNoStem == near.scores[0].scoreNoStem) {
+                    if (st.scores[0].adjustedScore < near.scores[0].adjustedScore) {
+                        break;
+                    }
+                }
+            }
+            pos = i + 1;
+        }
+        list.add(pos, near);
+    }
+
     /*
      * Methods for tokenize strings with caching.
      */
