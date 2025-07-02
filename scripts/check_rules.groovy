@@ -108,6 +108,8 @@ checkSpellErr = false
 nameSpellErr = res.getString("nameSpellErr")
 checkSameTargetDiffSource = true
 nameSameTargetDiffSource = res.getString("nameSameTargetDiffSource")
+checkSameTargetDiffSourceNoTags = true
+nameSameTargetDiffSourceNoTags = res.getString("nameSameTargetDiffSourceNoTags")
 
 
 /*
@@ -193,6 +195,7 @@ if (!prop) {
 def QAcheck() {
     rules = ruleset.clone()
     def tgtIndex = [:].withDefault { [] }
+    def tgtIndexNoTags = [:].withDefault { [] }
 // Prefs
     maxCharLengthAbove=240
     minCharLengthAbove=40
@@ -287,6 +290,9 @@ def QAcheck() {
             }
             if (target != QA_empty) {
                 tgtIndex[target] << [seg: ste.entryNum(), source: source, target: target]
+                def cleanSrc = source.replaceAll(/<\/?[a-z]+[0-9]* ?\/?>/, '')
+                def cleanTgt = target.replaceAll(/<\/?[a-z]+[0-9]* ?\/?>/, '')
+                tgtIndexNoTags[cleanTgt] << [seg: ste.entryNum(), source: source, sourceClean: cleanSrc, target: target]
             }
 
             rules.each { k, v ->
@@ -306,6 +312,18 @@ def QAcheck() {
                 list.each { occ ->
                     console.println(occ.seg + "\t" + nameSameTargetDiffSource + "\t[" + occ.target + "]")
                     model.data.add([ seg: occ.seg, rule: nameSameTargetDiffSource, source: occ.source, target: occ.target ])
+                    segment_count++
+                }
+            }
+        }
+    }
+    if (checkSameTargetDiffSourceNoTags) {
+        tgtIndexNoTags.each { key, list ->
+            def srcs = list.collect { it.sourceClean }.toSet()
+            if (srcs.size() > 1) {
+                list.each { occ ->
+                    console.println(occ.seg + "\t" + nameSameTargetDiffSourceNoTags + "\t[" + occ.target + "]")
+                    model.data.add([ seg: occ.seg, rule: nameSameTargetDiffSourceNoTags, source: occ.source, target: occ.target ])
                     segment_count++
                 }
             }
@@ -396,6 +414,12 @@ def interfejs(locationxy = new Point(0, 0), width = 900, height = 550, scrollpos
                     checkSameTargetDiffSource = !checkSameTargetDiffSource;
                 },
                 constraints:gbc(gridx:0, gridy:3, weightx: 0.5, fill:GridBagConstraints.HORIZONTAL, insets:[0,5,0,0]))
+            checkBox(text:res.getString("checkSameTargetDiffSourceNoTags"),
+                selected: checkSameTargetDiffSourceNoTags,
+                actionPerformed: {
+                    checkSameTargetDiffSourceNoTags = !checkSameTargetDiffSourceNoTags;
+                },
+                constraints:gbc(gridx:0, gridy:4, weightx: 0.5, fill:GridBagConstraints.HORIZONTAL, insets:[0,5,0,0]))
 
 
             checkBox(text:res.getString("checkLeadSpace"),
