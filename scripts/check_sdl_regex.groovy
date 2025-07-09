@@ -46,19 +46,23 @@ def parseRules(File f) {
     def qaGroup = root.'SettingsGroup'.find { it.@Id == 'QAVerificationSettings' }
     def cntSetting = qaGroup.'Setting'.find { it.@Id == 'RegExRulesCount' }
     int count = cntSetting?.text()?.toInteger() ?: 0
+    console.println("Loading ${count} QA rules")
     def rules = []
     (0..<count).each { idx ->
         def set = qaGroup.'Setting'.find { it.@Id == "RegExRules${idx}" }
         if (!set) return
         def rule = set.'RegExRule'[0]
-        rules << [
+        def r = [
                 description : rule.'Description'.text(),
                 ignoreCase  : rule.'IgnoreCase'.text().toBoolean(),
                 src         : StringEscapeUtils.unescapeXml(rule.'RegExSource'.text()),
                 tgt         : StringEscapeUtils.unescapeXml(rule.'RegExTarget'.text()),
                 cond        : rule.'RuleCondition'.text()
         ]
+        console.println("Rule ${idx + 1}: src='${r.src}', tgt='${r.tgt}', desc='${r.description}', type='${r.cond}'")
+        rules << r
     }
+    console.println("Total rules loaded: ${rules.size()}")
     return rules
 }
 
